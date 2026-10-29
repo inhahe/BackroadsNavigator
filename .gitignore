@@ -1,0 +1,23 @@
+*.iml
+.gradle/
+.kotlin/
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Machine-local: the SDK path, and your OpenRouteService API key
+/local.properties
+
+# Built apps (a local build carries the API key from local.properties)
+*.apk
+*.aab
+
+# Local-only notes, logs and dev scripts -- gradlew.bat is the Gradle wrapper, not ours
+todo.txt
+*.log
+*.bat
+!gradlew.bat

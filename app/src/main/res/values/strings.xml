@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Backroads Navigator</string>
+    <string name="search_hint">Search destination…</string>
+    <string name="backroads_on">Backroads mode ON — avoiding highways</string>
+    <string name="backroads_off">Backroads mode OFF</string>
+    <string name="exclude_street_title">Exclude Street</string>
+    <string name="exclude_street_message">Exclude \"%1$s\" from routing?\nRoutes will avoid this street.</string>
+    <string name="street_excluded">%1$s excluded from routes</string>
+    <string name="street_unexcluded">%1$s removed from exclusions</string>
+    <string name="no_street_found">No street found at this location</string>
+    <string name="route_calculating">Calculating route…</string>
+    <string name="route_failed">Could not calculate route. Try different options.</string>
+    <string name="route_recalculating">Recalculating route…</string>
+    <string name="arrived">You have arrived!</string>
+    <string name="off_route">Off route — recalculating…</string>
+    <string name="location_permission_required">Location permission is required for navigation</string>
+    <string name="api_key_missing">OpenRouteService API key not set.\nAdd ORS_API_KEY to gradle.properties</string>
+    <string name="excluded_streets_title">Excluded Streets</string>
+    <string name="no_excluded_streets">No excluded streets.\nLong-press on the map to exclude a street.</string>
+    <string name="clear_all">Clear All</string>
+    <string name="cancel">Cancel</string>
+    <string name="exclude">Exclude</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+
+    <!-- Saved places -->
+    <string name="home_not_set">Home not set.\nLong-press the Home button to set your home address.</string>
+    <string name="navigating_home">Navigating home…</string>
+    <string name="set_home_title">Set Home Address</string>
+    <string name="set_home_message">Search for your home address and select it, or long-press a location on the map.</string>
+    <string name="set_home_current">Use current location as Home?</string>
+    <string name="home_saved">Home address saved</string>
+    <string name="work_saved">Work address saved</string>
+    <string name="favorite_saved">%1$s saved to favorites</string>
+    <string name="saved_as_home">Saved as Home</string>
+    <string name="saved_as_work">Saved as Work</string>
+    <string name="enter_favorite_name">Favorite name</string>
+    <string name="save">Save</string>
+
+    <!-- Voice / orientation -->
+    <string name="voice_on">Voice guidance ON</string>
+    <string name="voice_off">Voice guidance OFF</string>
+    <string name="heading_up">Heading-up mode</string>
+    <string name="north_up">North-up mode</string>
+    <string name="rerouting">Rerouting…</string>
+</resources>
