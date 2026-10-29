@@ -1,0 +1,16 @@
+Turn-by-turn car navigation that can keep you off the highways. Maps are OpenStreetMap, place search is OpenStreetMap's Nominatim, and routes come from OpenRouteService.
+
+Features:
+
+• Backroads mode: routes avoid highways and toll roads and prefer the shortest way over the fastest, so you see the smaller roads.
+• Exclude streets: long-press a street on the map to keep routes off it, and manage the list of excluded streets.
+• Search for an address or place and route there.
+• Turn-by-turn navigation with spoken directions, remaining distance, arrival time and a list of all the directions.
+• Rerouting from where you are when you leave the route.
+• North-up or heading-up map while navigating.
+• Saved places: Home, Work and favourites.
+• Your position comes from the phone's own GPS: no Google Play Services.
+
+Routing needs a free OpenRouteService API key: sign up at openrouteservice.org, create a key, and paste it into the app when it asks. The free plan allows 2,000 routes a day.
+
+No ads, no tracking.

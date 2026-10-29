@@ -1,0 +1,43 @@
+# F-Droid build recipe for Backroads Navigator.
+#
+# To submit: copy this file to `metadata/com.backroads.navigator.yml` in a fork
+# of https://gitlab.com/fdroid/fdroiddata and open a merge request. It lives
+# here so it is reviewed alongside the code. The store listing itself (name,
+# descriptions, changelogs) is in fastlane/metadata/android/, which F-Droid
+# reads from this repository.
+#
+# Before submitting: publish this repository (SourceCode / Repo below are where
+# it is expected to go; change them if it goes elsewhere), and tag the first
+# release v1.0. After acceptance, F-Droid finds new versions by itself from new
+# v* tags.
+#
+# Routing uses OpenRouteService, whose API needs a key. No key is built in:
+# users enter their own, so F-Droid's reviewers may label the app with the
+# NonFreeNet anti-feature (it depends on a network service). The service runs
+# on free software (openrouteservice is GPL), which argues against the label.
+
+Categories:
+  - Navigation
+License: MIT
+AuthorName: Inhahe
+AuthorWebSite: https://inhahe.com
+SourceCode: https://github.com/inhahe/BackroadsNavigator
+IssueTracker: https://github.com/inhahe/BackroadsNavigator/issues
+
+AutoName: Backroads Navigator
+
+RepoType: git
+Repo: https://github.com/inhahe/BackroadsNavigator.git
+
+Builds:
+  - versionName: '1.0'
+    versionCode: 1
+    commit: v1.0
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: '1.0'
+CurrentVersionCode: 1

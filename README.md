@@ -1,0 +1,43 @@
+# Backroads Navigator
+
+Turn-by-turn car navigation for Android that can keep you off the highways. Maps are
+OpenStreetMap, place search is OpenStreetMap's Nominatim, and routes come from
+OpenRouteService.
+
+## Features
+
+- **Backroads mode** (the road button): routes avoid highways and toll roads and prefer the
+  shortest way over the fastest, so you see the smaller roads.
+- **Exclude streets**: long-press a street on the map to keep routes off it. The excluded-streets
+  button lists them, to remove one or clear them all.
+- **Search** for an address or place, and tap a result to route there.
+- **Turn-by-turn navigation** with spoken directions (voice can be turned off), the remaining
+  distance and arrival time, and a list of all the directions.
+- **Rerouting**: leave the route and a new one is worked out from where you are.
+- **North-up or heading-up** map while navigating.
+- **Saved places**: Home (tap the Home button to go home; long-press it to set it), Work, and
+  favourites.
+- No ads, no tracking, no Google Play Services: your position comes from the phone's own GPS.
+
+## The OpenRouteService key
+
+Routes come from OpenRouteService, which needs a free API key:
+
+1. Sign up at <https://openrouteservice.org/dev/#/signup> and create a key.
+2. The first time you ask for a route, the app asks for the key. Paste it in and it is kept on
+   the phone. If OpenRouteService ever rejects the key, the app asks again.
+
+The free plan allows 2,000 routes a day.
+
+For your own builds you can build a key in: put `ORS_API_KEY=<your key>` in `local.properties`
+(next to `gradle.properties`). That file is never committed, so the key stays on your machine.
+
+## Building
+
+Needs a JDK (17 or later) and the Android SDK.
+
+    gradlew assembleDebug
+
+## License
+
+MIT. See `LICENSE`.

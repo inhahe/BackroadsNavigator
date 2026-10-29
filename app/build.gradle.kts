@@ -27,6 +27,13 @@ android {
         buildConfigField("String", "ORS_API_KEY", "\"${localProperties.getProperty("ORS_API_KEY", "")}\"")
     }
 
+    // F-Droid: no Google-encrypted dependency list in the APK signing block (F-Droid's
+    // scanner rejects it, and it cannot be verified).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
