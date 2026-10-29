@@ -20,6 +20,11 @@
     <string name="ors_key_rejected">OpenRouteService did not accept this key. Check it, or create a new one at account.heigit.org.</string>
     <string name="ors_key_hint">API key</string>
     <string name="ors_key_get">Get a key</string>
+    <string name="ors_key_empty">Paste your key here first</string>
+    <string name="ors_key_missing">No OpenRouteService key.</string>
+    <string name="ors_quota_used_up">The daily OpenRouteService quota for this key is used up. It renews 24 hours after the first route of the day.</string>
+    <string name="ors_rate_limited">Too many routes asked of OpenRouteService in the last minute. Try again in a minute.</string>
+    <string name="reroute_failed">%1$s Navigation stopped.</string>
     <string name="excluded_streets_title">Excluded Streets</string>
     <string name="no_excluded_streets">No excluded streets.\nLong-press on the map to exclude a street.</string>
     <string name="clear_all">Clear All</string>

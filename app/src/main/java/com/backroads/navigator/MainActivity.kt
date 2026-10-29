@@ -34,6 +34,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.backroads.navigator.api.ApiKeyRejectedException
 import com.backroads.navigator.api.GeocodingResult
 import com.backroads.navigator.api.GeocodingService
+import com.backroads.navigator.api.QuotaExceededException
+import com.backroads.navigator.api.RateLimitedException
 import com.backroads.navigator.api.Route
 import com.backroads.navigator.api.RouteStep
 import com.backroads.navigator.api.RoutingOptions
@@ -60,6 +62,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.events.MapEventsReceiver
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 
 class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
 
@@ -133,6 +136,8 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
 
     private var pendingSaveKind: String? = null
     private var orsKeyDialogShowing = false
+    /** Numbers route requests: a response to any but the latest is stale and ignored. */
+    private var routeRequest = 0
 
     /** When the last GPS fix arrived (elapsedRealtime); network fixes defer to a recent one. */
     private var lastGpsFixAt = 0L
@@ -646,12 +651,8 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     }
 
     private fun showSaveFavoriteDialog(dest: GeoPoint) {
-        val input = EditText(this).apply {
-            hint = getString(R.string.enter_favorite_name)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-            setText(destinationName); selectAll()
-            setPadding(64, 32, 64, 16)
-        }
+        val input = dialogTextField(getString(R.string.enter_favorite_name), destinationName,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
         AlertDialog.Builder(this)
             .setTitle("Save Favorite").setView(input)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -678,9 +679,11 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
             return
         }
 
+        val request = ++routeRequest
+        val reroute = isRerouting
         lifecycleScope.launch {
             Snackbar.make(mapView,
-                if (isRerouting) R.string.rerouting else R.string.route_calculating,
+                if (reroute) R.string.rerouting else R.string.route_calculating,
                 Snackbar.LENGTH_SHORT).show()
 
             val options = RoutingOptions(
@@ -690,28 +693,49 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
 
             try {
                 val route = routingService.getRoute(origin, destination, options)
-                if (route != null) {
-                    currentRoute = route
-                    if (isRerouting) {
-                        // Auto-restart navigation after reroute
-                        isRerouting = false
-                        showRouteOnMap(route)
-                        startNavigation(route)
-                        speak("Route recalculated")
-                    } else {
-                        showRoute(route)
-                    }
-                } else {
-                    isRerouting = false
-                    Snackbar.make(mapView, R.string.route_failed, Snackbar.LENGTH_LONG).show()
+                if (request != routeRequest) return@launch
+                if (route == null) {
+                    routingFailed(reroute, getString(R.string.route_failed))
+                    return@launch
                 }
+                currentRoute = route
+                if (reroute) {
+                    // Auto-restart navigation after reroute
+                    isRerouting = false
+                    showRouteOnMap(route)
+                    startNavigation(route)
+                    speak("Route recalculated")
+                } else {
+                    showRoute(route)
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: ApiKeyRejectedException) {
-                askForOrsKey(rejected = true, destination)
+                if (request == routeRequest) askForOrsKey(rejected = true, destination)
+            } catch (e: QuotaExceededException) {
+                if (request == routeRequest) routingFailed(reroute, getString(R.string.ors_quota_used_up))
+            } catch (e: RateLimitedException) {
+                if (request == routeRequest) routingFailed(reroute, getString(R.string.ors_rate_limited))
             } catch (e: Exception) {
-                isRerouting = false
-                Snackbar.make(mapView,
-                    "Route error: ${e.message}", Snackbar.LENGTH_LONG).show()
+                if (request == routeRequest) routingFailed(reroute, "Route error: ${e.message}")
             }
+        }
+    }
+
+    /**
+     * No route could be had: say [reason]. A failed [reroute] also ends navigation: the engine
+     * stopped following the old route when the user left it, so carrying on would leave a
+     * navigation panel that no longer updates and never reroutes again.
+     */
+    private fun routingFailed(reroute: Boolean, reason: String) {
+        isRerouting = false
+        if (reroute && isNavigating) {
+            stopNavigation()
+            speak("Could not recalculate the route. Navigation stopped.")
+            Snackbar.make(mapView, getString(R.string.reroute_failed, reason),
+                Snackbar.LENGTH_LONG).show()
+        } else {
+            Snackbar.make(mapView, reason, Snackbar.LENGTH_LONG).show()
         }
     }
 
@@ -724,48 +748,69 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
      * Ask for the user's OpenRouteService key, keep it, and calculate the route to
      * [destination] with it. [rejected]: the service refused the key in use.
      *
-     * A reroute stays one until the dialog closes (isRerouting stays set, so navigation
+     * A reroute stays one while the dialog is open (isRerouting stays set, so navigation
      * restarts on the new route), which also keeps further off-route fixes from asking
-     * again; closing the dialog without a key ends it. Only one such dialog at a time.
+     * again; closing the dialog without a key makes it a failed reroute. Only one such
+     * dialog at a time.
      */
     private fun askForOrsKey(rejected: Boolean, destination: GeoPoint) {
         if (orsKeyDialogShowing) return
         orsKeyDialogShowing = true
+        val reroute = isRerouting
         var saved = false
-        val input = EditText(this).apply {
-            hint = getString(R.string.ors_key_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            isSingleLine = true
-            setText(routingService.apiKey); selectAll()
-            setPadding(64, 32, 64, 16)
-        }
-        AlertDialog.Builder(this)
+        val input = dialogTextField(getString(R.string.ors_key_hint), routingService.apiKey,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+            .apply { isSingleLine = true }
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.ors_key_title)
             .setMessage(if (rejected) R.string.ors_key_rejected else R.string.ors_key_message)
             .setView(input)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val key = input.text.toString().trim()
-                if (key.isEmpty()) return@setPositiveButton
-                saved = true
-                getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit()
-                    .putString(PREF_ORS_KEY, key).apply()
-                routingService.apiKey = key
-                calculateRoute(destination)
-            }
-            .setNeutralButton(R.string.ors_key_get) { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORS_SIGNUP_URL)))
-                } catch (e: ActivityNotFoundException) {
-                    Toast.makeText(this, ORS_SIGNUP_URL, Toast.LENGTH_LONG).show()
-                }
-            }
+            .setPositiveButton(R.string.save, null)
+            .setNeutralButton(R.string.ors_key_get, null)
             .setNegativeButton(R.string.cancel, null)
             .setOnDismissListener {
                 orsKeyDialogShowing = false
-                if (!saved) isRerouting = false
+                if (!saved && reroute && isRerouting) {
+                    routingFailed(reroute = true, getString(R.string.ors_key_missing))
+                }
             }
             .show()
+        // Handled after show(), where they no longer close the dialog: "Get a key" opens the
+        // sign-up page and the user comes back to paste the key, and Save with an empty field
+        // says so.
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val key = input.text.toString().trim()
+            if (key.isEmpty()) {
+                input.error = getString(R.string.ors_key_empty)
+                return@setOnClickListener
+            }
+            saved = true
+            getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit()
+                .putString(PREF_ORS_KEY, key).apply()
+            routingService.apiKey = key
+            dialog.dismiss()
+            calculateRoute(destination)
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORS_SIGNUP_URL)))
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(this, ORS_SIGNUP_URL, Toast.LENGTH_LONG).show()
+            }
+        }
     }
+
+    /** A text field for a dialog's body: [text], selected, with [hint] when it is empty. */
+    private fun dialogTextField(hint: String, text: String, inputType: Int): EditText =
+        EditText(this).apply {
+            this.hint = hint
+            this.inputType = inputType
+            setText(text)
+            selectAll()
+            setPadding(dp(20), dp(10), dp(20), dp(6))
+        }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     /** Draw route on map without showing the summary panel. */
     private fun showRouteOnMap(route: Route) {
@@ -812,6 +857,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     }
 
     private fun stopNavigation() {
+        routeRequest++ // a route still on its way is no longer wanted
         isNavigating = false
         isRerouting = false
         navigationEngine.stopNavigation()
@@ -833,6 +879,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     }
 
     private fun cancelRoute() {
+        routeRequest++ // a route still on its way is no longer wanted
         routeSummaryPanel.visibility = View.GONE
         routeRenderer.clearRoute()
         routeRenderer.clearMarkers()

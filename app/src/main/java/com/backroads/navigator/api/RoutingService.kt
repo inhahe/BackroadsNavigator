@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,45 +34,66 @@ class RoutingService(var apiKey: String) {
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     /**
-     * Calculate a route between two points with optional backroads mode
-     * and street exclusions.
+     * The route from [origin] to [destination] under [options] (backroads mode, avoided
+     * areas), or null when there is none or the request failed: no network, a server error,
+     * a response that cannot be read.
+     *
+     * @throws RoutingRefusedException when OpenRouteService refuses the request itself, which
+     *   a retry will not fix: the key ([ApiKeyRejectedException]), the day's quota
+     *   ([QuotaExceededException]) or the per-minute limit ([RateLimitedException]).
      */
     suspend fun getRoute(
         origin: GeoPoint,
         destination: GeoPoint,
         options: RoutingOptions = RoutingOptions()
     ): Route? = withContext(Dispatchers.IO) {
-        try {
-            val body = buildRequestBody(origin, destination, options)
-            val profile = "driving-car"
-            val url = "$baseUrl/$profile/geojson"
+        val request = Request.Builder()
+            .url("$baseUrl/driving-car/geojson")
+            .header("Authorization", apiKey)
+            .header("Content-Type", "application/json")
+            .post(buildRequestBody(origin, destination, options).toString()
+                .toRequestBody(jsonMediaType))
+            .build()
 
-            val request = Request.Builder()
-                .url(url)
-                .header("Authorization", apiKey)
-                .header("Content-Type", "application/json")
-                .post(body.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-
-            if (!response.isSuccessful || responseBody == null) {
-                android.util.Log.e("RoutingService",
-                    "ORS error ${response.code}: $responseBody")
-                if (response.code == 401 || response.code == 403) {
-                    throw ApiKeyRejectedException(response.code)
-                }
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: IOException) {
+            android.util.Log.e("RoutingService", "Route request failed", e)
+            return@withContext null
+        }
+        response.use {
+            val text = try {
+                it.body?.string()
+            } catch (e: IOException) {
+                android.util.Log.e("RoutingService", "Route response could not be read", e)
                 return@withContext null
             }
-
-            parseRouteResponse(responseBody)
-        } catch (e: ApiKeyRejectedException) {
-            throw e
-        } catch (e: Exception) {
-            android.util.Log.e("RoutingService", "Route calculation failed", e)
-            null
+            if (!it.isSuccessful || text == null) {
+                android.util.Log.e("RoutingService", "ORS error ${it.code}: $text")
+                refusal(it.code, it.header("x-ratelimit-remaining"))?.let { e -> throw e }
+                return@withContext null
+            }
+            try {
+                parseRouteResponse(text)
+            } catch (e: RuntimeException) {
+                // Malformed or unexpected JSON (Gson's exceptions, missing fields).
+                android.util.Log.e("RoutingService", "Route response could not be parsed", e)
+                null
+            }
         }
+    }
+
+    /**
+     * What HTTP status [code] says about the request, if it is a refusal. OpenRouteService
+     * answers 403 with the same text ("Daily quota reached or API key unauthorized") both for
+     * a bad key and for a used-up daily quota; only the quota header, [remaining] requests,
+     * tells them apart. 429 is the per-minute limit.
+     */
+    private fun refusal(code: Int, remaining: String?): RoutingRefusedException? = when {
+        code == 429 -> RateLimitedException()
+        code == 403 && remaining?.trim() == "0" -> QuotaExceededException()
+        code == 401 || code == 403 -> ApiKeyRejectedException(code)
+        else -> null
     }
 
     private fun buildRequestBody(
@@ -237,6 +259,17 @@ class RoutingService(var apiKey: String) {
     }
 }
 
-/** OpenRouteService refused the API key: HTTP [code] 401 (none or malformed) or 403 (not allowed). */
+/** OpenRouteService refused the request; retrying will not help until the user acts. */
+sealed class RoutingRefusedException(message: String) : Exception(message)
+
+/** The key was refused: HTTP [code] 401 (none, or malformed) or 403 (not authorized). */
 class ApiKeyRejectedException(val code: Int) :
-    Exception("OpenRouteService rejected the API key (HTTP $code)")
+    RoutingRefusedException("OpenRouteService rejected the API key (HTTP $code)")
+
+/** The key's daily quota is used up (403 with no requests remaining). */
+class QuotaExceededException :
+    RoutingRefusedException("OpenRouteService's daily quota for this key is used up")
+
+/** Too many requests in the last minute (429). */
+class RateLimitedException :
+    RoutingRefusedException("OpenRouteService's per-minute limit was reached")

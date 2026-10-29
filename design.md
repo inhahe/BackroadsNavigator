@@ -35,17 +35,30 @@ the network provider every second. GPS fixes are used whenever one arrived in th
 alternate and make the position jump. If no position is known when the map wants to centre
 on the user, it centres on the first fix to arrive.
 
+**Route requests and their outcomes.** `RoutingService.getRoute` returns a route, or null
+when the request failed (no network, a server error, an unreadable response), or throws a
+`RoutingRefusedException` when OpenRouteService refuses the request itself, which a retry will
+not fix: `ApiKeyRejectedException` (401, or 403 with requests left), `QuotaExceededException`
+(403 with the `x-ratelimit-remaining` header at 0: OpenRouteService gives the same 403 text
+for a bad key and a used-up daily quota) or `RateLimitedException` (429, the per-minute limit).
+`calculateRoute` numbers each request (`routeRequest`); a response to any but the latest is
+ignored, and stopping navigation or cancelling a route bumps the number, so a late answer
+cannot bring back a route the user dropped. A failure that is not about the key goes through
+`routingFailed`: it says why, and if the request was a reroute it also ends navigation,
+because the engine stopped following the old route when the user left it.
+
 **The OpenRouteService key.** No key is built into published builds: each user gets their
-own (free) and enters it. `RoutingService.apiKey` is the key in use: the one saved in the
-`settings` SharedPreferences (`ors_api_key`), else `BuildConfig.ORS_API_KEY`, which is
-`ORS_API_KEY` from `local.properties` (never committed, so only a developer's own builds carry
-one), else blank. `calculateRoute` asks for a key (`askForOrsKey`) when it is blank, and again
-when OpenRouteService answers 401 or 403, which `RoutingService` reports as
-`ApiKeyRejectedException` (other failures still return null). Saving the key retries the
-route. A reroute stays a reroute while the dialog is open (`isRerouting` stays set, so
-navigation restarts on the new route, and further off-route fixes do not open more dialogs);
-closing it without a key ends the reroute. There is no other place to change the key: a
-rejected key is the time it needs changing.
+own (free, from account.heigit.org) and enters it. `RoutingService.apiKey` is the key in use:
+the one saved in the `settings` SharedPreferences (`ors_api_key`), else
+`BuildConfig.ORS_API_KEY`, which is `ORS_API_KEY` from `local.properties` (never committed, so
+only a developer's own builds carry one), else blank. `calculateRoute` asks for a key
+(`askForOrsKey`) when it is blank, and again on `ApiKeyRejectedException`. The dialog's Save
+and "Get a key" buttons are handled after `show()` so they do not close it: the user can open
+the sign-up page and come back to paste the key, and Save with an empty field says so.
+Saving retries the route. A reroute stays a reroute while the dialog is open (`isRerouting`
+stays set, so navigation restarts on the new route, and further off-route fixes do not open
+more dialogs); closing it without a key is a failed reroute. There is no other place to
+change the key: a rejected key is the time it needs changing.
 
 ## Publishing
 
