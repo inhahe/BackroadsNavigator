@@ -28,10 +28,9 @@ android {
     }
 
     // F-Droid: no Google-encrypted dependency list in the APK signing block (F-Droid's
-    // scanner rejects it, and it cannot be verified).
+    // scanner rejects it, and it cannot be verified). App bundles keep theirs.
     dependenciesInfo {
         includeInApk = false
-        includeInBundle = false
     }
 
     buildTypes {
