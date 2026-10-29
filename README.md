@@ -17,7 +17,8 @@ OpenRouteService.
 - **North-up or heading-up** map while navigating.
 - **Saved places**: Home (tap the Home button to go home; long-press it to set it), Work, and
   favourites.
-- No ads, no tracking, no Google Play Services: your position comes from the phone's own GPS.
+- No ads, no tracking, no Google Play Services in the app: your position comes from
+  Android's own location service (GPS, plus network location where the phone has it).
 
 ## The OpenRouteService key
 
@@ -34,9 +35,9 @@ For your own builds you can build a key in: put `ORS_API_KEY=<your key>` in `loc
 
 ## Building
 
-Needs a JDK (17 or later) and the Android SDK.
+Needs a JDK from 17 to 21 (Gradle 8.5 runs on no newer one) and the Android SDK.
 
-    gradlew assembleDebug
+    ./gradlew assembleDebug        (gradlew.bat assembleDebug on Windows)
 
 ## License
 

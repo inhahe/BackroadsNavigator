@@ -9,7 +9,7 @@ Features:
 • Rerouting from where you are when you leave the route.
 • North-up or heading-up map while navigating.
 • Saved places: Home, Work and favourites.
-• Your position comes from the phone's own GPS: no Google Play Services.
+• No Google Play Services in the app: your position comes from Android's own location service (GPS, plus network location where the phone has it).
 
 Routing needs a free OpenRouteService API key: sign up at account.heigit.org, create a key, and paste it into the app when it asks. The free plan allows 2,000 routes a day.
 

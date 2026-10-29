@@ -16,6 +16,7 @@ import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -175,7 +176,9 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
             mapView.controller.setZoom(DEFAULT_ZOOM)
         }
         if (isNavigating) {
-            navigationEngine.updateLocation(userLocation!!)
+            if (loc.hasAccuracy() && loc.accuracy <= NAVIGATION_MAX_ACCURACY_M) {
+                navigationEngine.updateLocation(userLocation!!)
+            }
             mapView.controller.animateTo(userLocation)
             // Heading-up: rotate map to match travel bearing
             if (headingUpMode && loc.hasBearing()) {
@@ -187,11 +190,19 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     companion object {
         private const val LOCATION_PERMISSION_REQUEST = 1001
         private const val DEFAULT_ZOOM = 15.0
-        private const val LOCATION_INTERVAL_MS = 1000L
+        private const val GPS_INTERVAL_MS = 1000L
+        /** Network fixes only stand in while GPS has nothing recent: no need for them often. */
+        private const val NETWORK_INTERVAL_MS = 10_000L
         /** How long after a GPS fix network fixes are ignored. */
         private const val GPS_PREFERRED_MS = 10_000L
-        private val LOCATION_PROVIDERS = listOf(
-            LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        /**
+         * Fixes vaguer than this are kept from the navigation engine, which declares the user
+         * off route 50 m from it (NavigationEngine): a coarse network fix in a tunnel would
+         * otherwise set off a reroute from the wrong place.
+         */
+        private const val NAVIGATION_MAX_ACCURACY_M = 50f
+        /** A last known position older than this is not taken as where the user is. */
+        private const val STALE_FIX_MS = 2 * 60 * 1000L
         private const val PREFS_SETTINGS = "settings"
         private const val PREF_ORS_KEY = "ors_api_key"
         private const val ORS_SIGNUP_URL = "https://account.heigit.org"
@@ -294,7 +305,13 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
         routeRenderer = RouteRenderer(mapView)
     }
 
+    @SuppressLint("ClickableViewAccessibility") // observes touches, consumes none
     private fun initMap() {
+        // Once the user moves the map, the first fix no longer re-centres it.
+        mapView.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) centerOnNextFix = false
+            false
+        }
         mapView.apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
@@ -667,6 +684,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     // ── Routing ────────────────────────────────────────────────────
 
     private fun calculateRoute(destination: GeoPoint) {
+        centerOnNextFix = false // the map shows the destination now, not the user
         val origin = userLocation
         if (origin == null) {
             Snackbar.make(mapView, "Waiting for GPS location...",
@@ -1055,8 +1073,8 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     // ── Location ───────────────────────────────────────────────────
 
     private fun requestLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
+        if (!granted(Manifest.permission.ACCESS_FINE_LOCATION) &&
+            !granted(Manifest.permission.ACCESS_COARSE_LOCATION)
         ) {
             ActivityCompat.requestPermissions(this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
@@ -1072,49 +1090,72 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (requestCode != LOCATION_PERMISSION_REQUEST) return
+        // Either will do: "Approximate" alone (Android 12+) still gives a network position.
+        if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
             startLocationUpdates()
             moveToCurrentLocation()
-        } else if (requestCode == LOCATION_PERMISSION_REQUEST) {
+        } else {
             Toast.makeText(this, R.string.location_permission_required,
                 Toast.LENGTH_LONG).show()
         }
     }
 
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * The location providers to use, by permission: GPS and the network with precise location,
+     * the network alone with approximate. Only those the device has.
+     */
+    private fun usableProviders(): List<String> {
+        val providers = when {
+            granted(Manifest.permission.ACCESS_FINE_LOCATION) ->
+                listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            granted(Manifest.permission.ACCESS_COARSE_LOCATION) ->
+                listOf(LocationManager.NETWORK_PROVIDER)
+            else -> emptyList()
+        }
+        return providers.filter { it in locationManager.allProviders }
+    }
+
     /** Location updates from GPS and the network, from Android itself (no Google services). */
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) return
         // onResume and the permission grant both start updates: register the listener once.
         locationManager.removeUpdates(locationListener)
-        for (provider in LOCATION_PROVIDERS) {
-            if (provider in locationManager.allProviders) {
-                locationManager.requestLocationUpdates(
-                    provider, LOCATION_INTERVAL_MS, 0f, locationListener, Looper.getMainLooper())
-            }
+        for (provider in usableProviders()) {
+            val interval =
+                if (provider == LocationManager.GPS_PROVIDER) GPS_INTERVAL_MS else NETWORK_INTERVAL_MS
+            locationManager.requestLocationUpdates(
+                provider, interval, 0f, locationListener, Looper.getMainLooper())
         }
     }
 
+    /**
+     * Centre the map on the newest position Android already knows. One older than
+     * [STALE_FIX_MS] shows the area but is not taken as where the user is: routes do not start
+     * from it, and the first live fix still centres the map.
+     */
     @SuppressLint("MissingPermission")
     private fun moveToCurrentLocation() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) return
-        val last = LOCATION_PROVIDERS
-            .filter { it in locationManager.allProviders }
+        val last = usableProviders()
             .mapNotNull { locationManager.getLastKnownLocation(it) }
-            .maxByOrNull { it.time }
+            .maxByOrNull { it.elapsedRealtimeNanos }
         if (last == null) {
             centerOnNextFix = true
             return
         }
-        userLocation = GeoPoint(last.latitude, last.longitude)
-        mapView.controller.animateTo(userLocation)
+        val point = GeoPoint(last.latitude, last.longitude)
+        mapView.controller.animateTo(point)
         mapView.controller.setZoom(DEFAULT_ZOOM)
-        routeRenderer.updateUserLocation(userLocation!!)
+        val ageMs = (SystemClock.elapsedRealtimeNanos() - last.elapsedRealtimeNanos) / 1_000_000
+        if (ageMs > STALE_FIX_MS) {
+            centerOnNextFix = true
+            return
+        }
+        userLocation = point
+        routeRenderer.updateUserLocation(point)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────

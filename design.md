@@ -29,11 +29,17 @@ the navigation panel and spoken instructions (Android's TextToSpeech). Going off
 triggers a reroute from the current position, which restarts navigation on the new route.
 
 **Location.** Android's own `LocationManager`, not Google's fused location provider, so the
-app works without Google Play Services (a requirement for F-Droid). Updates come from GPS and
-the network provider every second. GPS fixes are used whenever one arrived in the last
-10 seconds; network fixes only fill in when GPS has nothing recent, so the two do not
-alternate and make the position jump. If no position is known when the map wants to centre
-on the user, it centres on the first fix to arrive.
+app works without Google Play Services (a requirement for F-Droid). With precise location it
+takes GPS fixes every second and network fixes every 10 seconds; with only approximate
+location (Android 12+ lets the user grant just that) the network alone. GPS fixes are used
+whenever one arrived in the last 10 seconds; network fixes only fill in when GPS has nothing
+recent, so the two do not alternate and make the position jump. During navigation, fixes less
+accurate than 50 m (the engine's off-route distance) move the map but are kept from the
+engine, or a vague network fix in a tunnel would set off a reroute from the wrong place. At
+start the map centres on the newest position Android already knows; one more than two
+minutes old shows the area but is not used as the user's position (routes do not start from
+it). With none, or a stale one, the first live fix centres the map, unless the user has
+touched the map or chosen a destination since.
 
 **Route requests and their outcomes.** `RoutingService.getRoute` returns a route, or null
 when the request failed (no network, a server error, an unreadable response), or throws a
