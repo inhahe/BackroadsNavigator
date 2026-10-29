@@ -73,3 +73,6 @@ Prepared for F-Droid: `fastlane/metadata/android/en-US/` holds the store listing
 repository, and `app/build.gradle.kts` turns off the Google-encrypted dependency block F-Droid
 rejects (`dependenciesInfo`). When the version is bumped, add
 `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`.
+`fastlane/metadata/android/en-US/images/icon.png` is the launcher icon rendered at 512 px
+(F-Droid cannot read a vector-only icon from the APK); when the icon changes, re-render it:
+`python "D:\visual studio projects\F-Droid tools\render_store_icon.py" .`.

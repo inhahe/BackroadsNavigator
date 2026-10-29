@@ -19,6 +19,11 @@ Builds:
     gradle:
       - yes
 
+MaintainerNotes: |-
+  Routing uses OpenRouteService (api.heigit.org/openrouteservice). No key is built in:
+  each user enters their own, free from account.heigit.org, when the app first asks for a
+  route. The openrouteservice server software is free software (GPL).
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9.]+$
 CurrentVersion: '1.0'
