@@ -15,7 +15,11 @@
     <string name="arrived">You have arrived!</string>
     <string name="off_route">Off route — recalculating…</string>
     <string name="location_permission_required">Location permission is required for navigation</string>
-    <string name="api_key_missing">OpenRouteService API key not set.\nAdd ORS_API_KEY to gradle.properties</string>
+    <string name="ors_key_title">OpenRouteService key</string>
+    <string name="ors_key_message">Routes come from OpenRouteService, which needs a free API key. Sign up at openrouteservice.org, create a key, and paste it here.</string>
+    <string name="ors_key_rejected">OpenRouteService did not accept this key. Check it, or create a new one at openrouteservice.org.</string>
+    <string name="ors_key_hint">API key</string>
+    <string name="ors_key_get">Get a key</string>
     <string name="excluded_streets_title">Excluded Streets</string>
     <string name="no_excluded_streets">No excluded streets.\nLong-press on the map to exclude a street.</string>
     <string name="clear_all">Clear All</string>

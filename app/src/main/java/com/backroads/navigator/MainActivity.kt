@@ -2,10 +2,13 @@ package com.backroads.navigator
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
@@ -28,6 +31,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.backroads.navigator.api.ApiKeyRejectedException
 import com.backroads.navigator.api.GeocodingResult
 import com.backroads.navigator.api.GeocodingService
 import com.backroads.navigator.api.Route
@@ -128,6 +132,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     private lateinit var directionsAdapter: DirectionsAdapter
 
     private var pendingSaveKind: String? = null
+    private var orsKeyDialogShowing = false
 
     /** When the last GPS fix arrived (elapsedRealtime); network fixes defer to a recent one. */
     private var lastGpsFixAt = 0L
@@ -182,6 +187,9 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
         private const val GPS_PREFERRED_MS = 10_000L
         private val LOCATION_PROVIDERS = listOf(
             LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        private const val PREFS_SETTINGS = "settings"
+        private const val PREF_ORS_KEY = "ors_api_key"
+        private const val ORS_SIGNUP_URL = "https://openrouteservice.org/dev/#/signup"
         private val DEFAULT_CENTER = GeoPoint(40.7128, -74.0060)
     }
 
@@ -236,11 +244,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
 
     private fun initServices() {
         geocodingService = GeocodingService()
-        val apiKey = BuildConfig.ORS_API_KEY
-        if (apiKey.isBlank()) {
-            Toast.makeText(this, R.string.api_key_missing, Toast.LENGTH_LONG).show()
-        }
-        routingService = RoutingService(apiKey)
+        routingService = RoutingService(storedOrsKey())
         exclusionStore = ExclusionStore(this)
         savedPlacesStore = SavedPlacesStore(this)
         navigationEngine = NavigationEngine().apply { listener = this@MainActivity }
@@ -669,6 +673,11 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
             return
         }
 
+        if (routingService.apiKey.isBlank()) {
+            askForOrsKey(rejected = false, destination)
+            return
+        }
+
         lifecycleScope.launch {
             Snackbar.make(mapView,
                 if (isRerouting) R.string.rerouting else R.string.route_calculating,
@@ -696,12 +705,66 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
                     isRerouting = false
                     Snackbar.make(mapView, R.string.route_failed, Snackbar.LENGTH_LONG).show()
                 }
+            } catch (e: ApiKeyRejectedException) {
+                askForOrsKey(rejected = true, destination)
             } catch (e: Exception) {
                 isRerouting = false
                 Snackbar.make(mapView,
                     "Route error: ${e.message}", Snackbar.LENGTH_LONG).show()
             }
         }
+    }
+
+    /** The user's OpenRouteService key, else the one built in from local.properties, else "". */
+    private fun storedOrsKey(): String =
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).getString(PREF_ORS_KEY, null)
+            ?.takeIf { it.isNotBlank() } ?: BuildConfig.ORS_API_KEY
+
+    /**
+     * Ask for the user's OpenRouteService key, keep it, and calculate the route to
+     * [destination] with it. [rejected]: the service refused the key in use.
+     *
+     * A reroute stays one until the dialog closes (isRerouting stays set, so navigation
+     * restarts on the new route), which also keeps further off-route fixes from asking
+     * again; closing the dialog without a key ends it. Only one such dialog at a time.
+     */
+    private fun askForOrsKey(rejected: Boolean, destination: GeoPoint) {
+        if (orsKeyDialogShowing) return
+        orsKeyDialogShowing = true
+        var saved = false
+        val input = EditText(this).apply {
+            hint = getString(R.string.ors_key_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            isSingleLine = true
+            setText(routingService.apiKey); selectAll()
+            setPadding(64, 32, 64, 16)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.ors_key_title)
+            .setMessage(if (rejected) R.string.ors_key_rejected else R.string.ors_key_message)
+            .setView(input)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val key = input.text.toString().trim()
+                if (key.isEmpty()) return@setPositiveButton
+                saved = true
+                getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit()
+                    .putString(PREF_ORS_KEY, key).apply()
+                routingService.apiKey = key
+                calculateRoute(destination)
+            }
+            .setNeutralButton(R.string.ors_key_get) { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORS_SIGNUP_URL)))
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this, ORS_SIGNUP_URL, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener {
+                orsKeyDialogShowing = false
+                if (!saved) isRerouting = false
+            }
+            .show()
     }
 
     /** Draw route on map without showing the summary panel. */

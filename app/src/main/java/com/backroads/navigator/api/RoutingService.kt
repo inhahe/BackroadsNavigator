@@ -18,8 +18,10 @@ import java.util.concurrent.TimeUnit
  * https://openrouteservice.org/dev/#/api-docs/v2/directions
  *
  * Sign up for a free API key at https://openrouteservice.org/dev/#/signup
+ *
+ * [apiKey] is the user's OpenRouteService key; blank when none has been given yet.
  */
-class RoutingService(private val apiKey: String) {
+class RoutingService(var apiKey: String) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -56,10 +58,15 @@ class RoutingService(private val apiKey: String) {
             if (!response.isSuccessful || responseBody == null) {
                 android.util.Log.e("RoutingService",
                     "ORS error ${response.code}: $responseBody")
+                if (response.code == 401 || response.code == 403) {
+                    throw ApiKeyRejectedException(response.code)
+                }
                 return@withContext null
             }
 
             parseRouteResponse(responseBody)
+        } catch (e: ApiKeyRejectedException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("RoutingService", "Route calculation failed", e)
             null
@@ -228,3 +235,7 @@ class RoutingService(private val apiKey: String) {
         )
     }
 }
+
+/** OpenRouteService refused the API key: HTTP [code] 401 (none or malformed) or 403 (not allowed). */
+class ApiKeyRejectedException(val code: Int) :
+    Exception("OpenRouteService rejected the API key (HTTP $code)")
