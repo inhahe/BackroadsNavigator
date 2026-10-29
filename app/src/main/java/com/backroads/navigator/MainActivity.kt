@@ -3,8 +3,12 @@ package com.backroads.navigator
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.InputType
@@ -37,7 +41,6 @@ import com.backroads.navigator.navigation.RouteRenderer
 import com.backroads.navigator.ui.DirectionsAdapter
 import com.backroads.navigator.ui.ExcludedStreetsAdapter
 import com.backroads.navigator.ui.SearchResultsAdapter
-import com.google.android.gms.location.*
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -63,7 +66,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     private lateinit var savedPlacesStore: SavedPlacesStore
     private lateinit var navigationEngine: NavigationEngine
     private lateinit var routeRenderer: RouteRenderer
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationManager: LocationManager
     private var tts: TextToSpeech? = null
 
     // ── Views ──────────────────────────────────────────────────────
@@ -126,23 +129,47 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
 
     private var pendingSaveKind: String? = null
 
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { loc ->
-                userLocation = GeoPoint(loc.latitude, loc.longitude)
-                routeRenderer.updateUserLocation(
-                    point = userLocation!!,
-                    bearingDeg = if (loc.hasBearing()) loc.bearing else routeRenderer.userBearing,
-                    accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else 0f
-                )
-                if (isNavigating) {
-                    navigationEngine.updateLocation(userLocation!!)
-                    mapView.controller.animateTo(userLocation)
-                    // Heading-up: rotate map to match travel bearing
-                    if (headingUpMode && loc.hasBearing()) {
-                        mapView.mapOrientation = -loc.bearing
-                    }
-                }
+    /** When the last GPS fix arrived (elapsedRealtime); network fixes defer to a recent one. */
+    private var lastGpsFixAt = 0L
+    /** No position was known when the map wanted to centre on the user: do it at the first fix. */
+    private var centerOnNextFix = false
+
+    // Every method is implemented: before Android 11 the three status callbacks have no
+    // default, and the framework calls them.
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) = onLocation(location)
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Deprecated in API 29")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    }
+
+    private fun onLocation(loc: Location) {
+        // GPS while it is delivering; a network fix only while GPS has had nothing recent, so
+        // the two do not alternate and make the position jump during navigation.
+        val now = SystemClock.elapsedRealtime()
+        if (loc.provider == LocationManager.GPS_PROVIDER) {
+            lastGpsFixAt = now
+        } else if (lastGpsFixAt != 0L && now - lastGpsFixAt < GPS_PREFERRED_MS) {
+            return
+        }
+        userLocation = GeoPoint(loc.latitude, loc.longitude)
+        routeRenderer.updateUserLocation(
+            point = userLocation!!,
+            bearingDeg = if (loc.hasBearing()) loc.bearing else routeRenderer.userBearing,
+            accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else 0f
+        )
+        if (centerOnNextFix) {
+            centerOnNextFix = false
+            mapView.controller.animateTo(userLocation)
+            mapView.controller.setZoom(DEFAULT_ZOOM)
+        }
+        if (isNavigating) {
+            navigationEngine.updateLocation(userLocation!!)
+            mapView.controller.animateTo(userLocation)
+            // Heading-up: rotate map to match travel bearing
+            if (headingUpMode && loc.hasBearing()) {
+                mapView.mapOrientation = -loc.bearing
             }
         }
     }
@@ -150,6 +177,11 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     companion object {
         private const val LOCATION_PERMISSION_REQUEST = 1001
         private const val DEFAULT_ZOOM = 15.0
+        private const val LOCATION_INTERVAL_MS = 1000L
+        /** How long after a GPS fix network fixes are ignored. */
+        private const val GPS_PREFERRED_MS = 10_000L
+        private val LOCATION_PROVIDERS = listOf(
+            LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         private val DEFAULT_CENTER = GeoPoint(40.7128, -74.0060)
     }
 
@@ -182,7 +214,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
     override fun onPause() {
         super.onPause()
         mapView.onPause()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        locationManager.removeUpdates(locationListener)
     }
 
     override fun onDestroy() {
@@ -212,7 +244,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
         exclusionStore = ExclusionStore(this)
         savedPlacesStore = SavedPlacesStore(this)
         navigationEngine = NavigationEngine().apply { listener = this@MainActivity }
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
     }
 
     private fun initViews() {
@@ -942,28 +974,37 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
         }
     }
 
+    /** Location updates from GPS and the network, from Android itself (no Google services). */
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) return
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
-            .setMinUpdateIntervalMillis(1000).build()
-        fusedLocationClient.requestLocationUpdates(
-            request, locationCallback, Looper.getMainLooper())
+        // onResume and the permission grant both start updates: register the listener once.
+        locationManager.removeUpdates(locationListener)
+        for (provider in LOCATION_PROVIDERS) {
+            if (provider in locationManager.allProviders) {
+                locationManager.requestLocationUpdates(
+                    provider, LOCATION_INTERVAL_MS, 0f, locationListener, Looper.getMainLooper())
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
     private fun moveToCurrentLocation() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) return
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            location?.let {
-                userLocation = GeoPoint(it.latitude, it.longitude)
-                mapView.controller.animateTo(userLocation)
-                mapView.controller.setZoom(DEFAULT_ZOOM)
-                routeRenderer.updateUserLocation(userLocation!!)
-            }
+        val last = LOCATION_PROVIDERS
+            .filter { it in locationManager.allProviders }
+            .mapNotNull { locationManager.getLastKnownLocation(it) }
+            .maxByOrNull { it.time }
+        if (last == null) {
+            centerOnNextFix = true
+            return
         }
+        userLocation = GeoPoint(last.latitude, last.longitude)
+        mapView.controller.animateTo(userLocation)
+        mapView.controller.setZoom(DEFAULT_ZOOM)
+        routeRenderer.updateUserLocation(userLocation!!)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
