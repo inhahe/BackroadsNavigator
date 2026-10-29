@@ -11,7 +11,7 @@ nothing in the app needs Google Play Services.
 | `MainActivity.kt` | The single screen: map, search box, buttons, route summary, navigation panel and bottom sheets, plus all app state (route, destination, mode, navigation). |
 | `BackroadsApp.kt` | Application: sets osmdroid's user agent, which OpenStreetMap's tile servers require. |
 | `api/GeocodingService.kt` | Place search and reverse geocoding with OpenStreetMap's Nominatim (no key). Search is biased to about 50 km around the user. |
-| `api/RoutingService.kt` | Routes from OpenRouteService's directions API (`driving-car`), which needs an API key. |
+| `api/RoutingService.kt` | Routes from OpenRouteService's directions API (`driving-car`) at `api.heigit.org/openrouteservice`, HeiGIT's address for it (the old `api.openrouteservice.org` shuts down in November 2026). Needs an API key, from `account.heigit.org`. |
 | `api/Models.kt` | Route, steps, geocoding results, routing options. |
 | `navigation/NavigationEngine.kt` | Follows the user along a route: current step, distance to the next turn, progress and arrival time, off-route detection, arrival. |
 | `navigation/RouteRenderer.kt` | Draws the route, markers, exclusion zones and the user's position (with accuracy circle and bearing) on the osmdroid map. |

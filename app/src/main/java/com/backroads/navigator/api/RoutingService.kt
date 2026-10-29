@@ -15,9 +15,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Routing via OpenRouteService API (free tier: 2000 requests/day).
- * https://openrouteservice.org/dev/#/api-docs/v2/directions
+ * https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/
  *
- * Sign up for a free API key at https://openrouteservice.org/dev/#/signup
+ * Sign up for a free API key at https://account.heigit.org
  *
  * [apiKey] is the user's OpenRouteService key; blank when none has been given yet.
  */
@@ -28,7 +28,8 @@ class RoutingService(var apiKey: String) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val baseUrl = "https://api.openrouteservice.org/v2/directions"
+    // HeiGIT's address since 2026; api.openrouteservice.org shuts down in November 2026.
+    private val baseUrl = "https://api.heigit.org/openrouteservice/v2/directions"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     /**

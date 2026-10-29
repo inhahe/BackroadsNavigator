@@ -23,7 +23,7 @@ OpenRouteService.
 
 Routes come from OpenRouteService, which needs a free API key:
 
-1. Sign up at <https://openrouteservice.org/dev/#/signup> and create a key.
+1. Sign up at <https://account.heigit.org> and create a key for openrouteservice.
 2. The first time you ask for a route, the app asks for the key. Paste it in and it is kept on
    the phone. If OpenRouteService ever rejects the key, the app asks again.
 

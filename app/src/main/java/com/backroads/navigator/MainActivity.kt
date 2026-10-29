@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity(), NavigationEngine.Listener {
             LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         private const val PREFS_SETTINGS = "settings"
         private const val PREF_ORS_KEY = "ors_api_key"
-        private const val ORS_SIGNUP_URL = "https://openrouteservice.org/dev/#/signup"
+        private const val ORS_SIGNUP_URL = "https://account.heigit.org"
         private val DEFAULT_CENTER = GeoPoint(40.7128, -74.0060)
     }
 
