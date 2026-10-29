@@ -4,6 +4,10 @@ Turn-by-turn car navigation for Android that can keep you off the highways. Maps
 OpenStreetMap, place search is OpenStreetMap's Nominatim, and routes come from
 OpenRouteService.
 
+> **Work in progress.** Backroads Navigator is unfinished and has not been tested yet: it
+> builds, but it has not been tried on a phone. Expect things not to work. (What still needs
+> trying is listed in `known-issues.md`.)
+
 ## Features
 
 - **Backroads mode** (the road button): routes avoid highways and toll roads and prefer the
